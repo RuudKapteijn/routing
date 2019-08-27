@@ -15,4 +15,4 @@
 import xarray as xr
 ds = xr.open_dataset('20190823_071554_.grb', engine='cfgrib', backend_kwargs={'filter_by_keys':{'numberOfPoints':609}})
 print(ds)
-
+print(ds.u10)
