@@ -296,36 +296,52 @@ class PolarObject(object):
     """
 
     def __init__(self, filename):
-        """ PolarObject contructor - reads polar file
+        """ PolarObject constructor - reads polar file and prepares data structures
+
+        file is tab delimited text file
+        each row starts with TWS followed by TWA - BSP combinations - no of cols is odd
+        TWS should be sorted from low to high
+        each row should have the same number of TWA - BSP combinations
+        TWA - BSP combinations should be sorted by TWA low to high
+        Columns should have similar TWA's not necessarily the same
+        Optimal beat angle and optimal run angle should be included in the TWA's
 
         reads file into into numpy.ndarray, structure cf. Expedition (tab delimited txt file)
+        creates:
+        self.tws_vector - a list of TWS values as float
+        self.twa_array  - a 2D array of TWA values as floats
+        self.bsp_array  - a 2D array of BSP values as floats
         :param filename: string - name of polar file (polar.txt)
-        TODO: allow for different angles per wind speed - now angles for lowest wind speed are used for all speeds
-        TODO: add method to return list of available angles for a windspeed - to be used to cal new points in itinery
         """
+
         self.polar = np.loadtxt(filename, delimiter='\t', dtype=np.float32)
-        print("WARNING: PolarObject assumes same TWA vector for all TWS")
 
         # create list of TWS values
-        self.TWS = []
+        self.tws_vector = []
         for i in range(0, self.polar.shape[0]):
-            self.TWS.append(self.polar[i][0])
-
-        # create list of TWA values
-        self.TWA = []
-        i = 3  # skip column 0 (contains wind speed) and column 1 and 2 (contains BSP at TWA = 0)
-        while i < len(self.polar[0]):
-            self.TWA.append(self.polar[0][i])
-            i += 2
-
-        # cleanup polar array to contain only BSP values
-        self.polar = np.delete(self.polar, 0, 1)  # delete 1st column with windspeeds
-        self.polar = np.delete(self.polar, 0, 1)  # delete 2nd column (new first) with TWA's = 0
-        self.polar = np.delete(self.polar, 0, 1)  # delete 3rd column (new first) with BSP's at TWA = 0
-        self.polar = np.delete(self.polar, 0, 1)  # delete 4rd column (new first) with TWA's (likely 30)
+            self.tws_vector.append(self.polar[i][0])
+        self.TWS = self.tws_vector.copy()
+        
+        # create 2D array of TWA values
+        self.twa_array = self.polar.copy()
+        self.twa_array = np.delete(self.twa_array, 0, 1)  # delete 1st column with windspeeds
+        self.twa_array = np.delete(self.twa_array, 0, 1)  # delete 2nd column (new first) with TWA's = 0
+        self.twa_array = np.delete(self.twa_array, 0, 1)  # delete 3rd column (new first) with BSP's at TWA = 0
+        cols = self.twa_array.shape[1] / 2
         i = 1
-        while self.polar.shape[1] > len(self.TWA):
-            self.polar = np.delete(self.polar, i, 1)
+        while self.twa_array.shape[1] > cols:
+            self.twa_array = np.delete(self.twa_array, i, 1)
+            i += 1
+
+        # create 2D array of BSP values
+        self.bsp_array = self.polar.copy()
+        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 1st column with windspeeds
+        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 2nd column (new first) with TWA's = 0
+        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 3rd column (new first) with BSP's at TWA = 0
+        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 4rd column (new first) with TWA's (likely 30)
+        i = 1
+        while self.bsp_array.shape[1] > cols:
+            self.bsp_array = np.delete(self.bsp_array, i, 1)
             i += 1
 
     def print_stats(self):
@@ -340,35 +356,63 @@ class PolarObject(object):
         print(self.polar)
         # print("polar[0,0]: %5.2f" % self.polar.item((0, 0)))
 
-    def _get_TWA_vector(self, tws):
-        """ get vector of BSP at TWA's for given TWS does interpolation between TWS values
+    def get_twa_vector(self, tws):
+        """ get vector of TWA's for given TWS does interpolation between TWS values
 
         :param tws: float - true wind speed for which vector is calculated in knots
-        :return: list of boat speeds in knots
-        TODO: this assumes TWA's are the same for ll TWS's this is not nessecarily true
+        :return: list of true wind angles - floats
         """
 
         # if tws >= max wind in polar return max wind vector
-        if tws >= self.TWS[-1]:
-            return self.polar[-1,]
+        if tws >= self.tws_vector[-1]:
+            return self.twa_array[-1,]
 
         # if tws < min wind in polar return interpolation with 0
-        if tws < self.TWS[0]:
-            f = 1 - (self.TWS[0] - tws) / self.TWS[0]
-            return self.polar[0,] * f
+        if tws < self.tws_vector[0]:
+            f = 1 - (self.tws_vector[0] - tws) / self.tws_vector[0]
+            return self.twa_array[0,] * f
 
         # find wind interval in TWS
-        for i in range(0, len(self.TWS) - 1):
+        for i in range(0, len(self.tws_vector) - 1):
             # if tws == TWS no interpolation required
-            if tws == self.TWS[i]:
-                return self.polar[i,]
+            if tws == self.tws_vector[i]:
+                return self.twa_array[i,]
             # interpolate between TWS[i] and TWS[i+1]
-            if tws > self.TWS[i] and tws < self.TWS[i + 1]:
-                d = self.TWS[i + 1] - self.TWS[i]
-                f1 = 1 - (tws - self.TWS[i]) / d
-                f2 = 1 - (self.TWS[i + 1] - tws) / d
-                return self.polar[i,] * f1 + self.polar[i + 1,] * f2
-        raise PolarException("no wind vector calculated")
+            if tws > self.tws_vector[i] and tws < self.tws_vector[i + 1]:
+                d = self.tws_vector[i + 1] - self.tws_vector[i]
+                f1 = 1 - (tws - self.tws_vector[i]) / d
+                f2 = 1 - (self.tws_vector[i + 1] - tws) / d
+                return self.twa_array[i,] * f1 + self.twa_array[i + 1,] * f2
+        raise PolarException("no true wind angle vector calculated")
+
+    def _get_bsp_vector(self, tws):
+        """ get vector of BSP's for given TWS does interpolation between TWS values
+
+        :param tws: float - true wind speed for which vector is calculated in knots
+        :return: list of boat speeds in knots - floats
+        """
+
+        # if tws >= max wind in polar return max wind vector
+        if tws >= self.tws_vector[-1]:
+            return self.bsp_array[-1,]
+
+        # if tws < min wind in polar return interpolation with 0
+        if tws < self.tws_vector[0]:
+            f = 1 - (self.tws_vector[0] - tws) / self.tws_vector[0]
+            return self.bsp_array[0,] * f
+
+        # find wind interval in TWS
+        for i in range(0, len(self.tws_vector) - 1):
+            # if tws == TWS no interpolation required
+            if tws == self.tws_vector[i]:
+                return self.bsp_array[i,]
+            # interpolate between TWS[i] and TWS[i+1]
+            if tws > self.tws_vector[i] and tws < self.tws_vector[i + 1]:
+                d = self.tws_vector[i + 1] - self.tws_vector[i]
+                f1 = 1 - (tws - self.tws_vector[i]) / d
+                f2 = 1 - (self.tws_vector[i + 1] - tws) / d
+                return self.bsp_array[i,] * f1 + self.bsp_array[i + 1,] * f2
+        raise PolarException("no boat speed vector calculated")
 
     def get_bsp(self, tws, twa):
         """ get boat speed at given truw wind speed and true wind angle
@@ -379,24 +423,26 @@ class PolarObject(object):
         :return: float - boat speed in knots
         """
 
-        twa1 = abs(twa)
-        if tws < 0 or tws > 100 or twa1 < 0 or twa1 > 180:
-            raise PolarException("PolarObject getSpeed TWS or TWA out of range (%5.2f, %d)" % (tws, twa1))
-        if twa1 < self.TWA[0]:  # is closer to wind than
+        twa= abs(twa)
+        if tws < 0 or tws > 100 or twa < 0 or twa > 180:
+            raise PolarException("PolarObject get_bsp(tws, twa) TWS or abs(TWA) out of range (%5.2f, %d)" % (tws, twa))
+
+        twa_vector = self.get_twa_vector(tws)
+        bsp_vector = self._get_bsp_vector(tws)
+        if twa < twa_vector[0]:  # is closer to wind than minimum TWA in
             return 0.0
         else:
-            wind_vector = self._get_TWA_vector(tws)
             # find twa interval in TWA
-            for i in range(0, len(self.TWA)):
+            for i in range(0, len(twa_vector)):
                 # if twa == TWA no interpolation required
-                if twa1 == self.TWA[i]:
-                    return wind_vector[i]
+                if twa == twa_vector[i]:
+                    return bsp_vector[i]
                 # interpolate between TWA[i] and TWA[i+1]
-                if twa1 > self.TWA[i] and twa1 < self.TWA[i + 1]:
-                    d = self.TWA[i + 1] - self.TWA[i]
-                    f1 = 1 - (twa1 - self.TWA[i]) / d
-                    f2 = 1 - (self.TWA[i + 1] - twa1) / d
-                    return wind_vector[i] * f1 + wind_vector[i + 1] * f2
+                if twa > twa_vector[i] and twa < twa_vector[i + 1]:
+                    d = twa_vector[i + 1] - twa_vector[i]
+                    f1 = 1 - (twa - twa_vector[i]) / d
+                    f2 = 1 - (twa_vector[i + 1] - twa) / d
+                    return bsp_vector[i] * f1 + bsp_vector[i + 1] * f2
             raise PolarException("no wind value calculated")
 
 # end PolarObject
