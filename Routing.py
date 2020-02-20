@@ -159,7 +159,8 @@ class Route(object):
 
         :return: string - statistics of route
         """
-        res = "Route %s, %d waypoints, length: %5.2f nm" % (self.name, self.wpt_cnt(), self.dst())
+        res = "Route %s, %d waypoints, length: %5.2f nm, 1st bearing: %d gr" % \
+              (self.name, self.wpt_cnt(), self.dst(), self.wpt(0).btw(self.wpt(1)))
         if len(self.wpt_list) > 2:
             res = res + " (only first two waypoints taken into account for routing)"
         return res
@@ -212,15 +213,21 @@ class TrackPoint(object):
 # end TrackPoint
 
 class WindObject(object):
-    """Encapsulates GRIB file (in NETCDF format) and provides wind data
+    """Encapsulates GRIB files for wind and current
+
+     (in NETCDF format) and provides wind data
+     wind files from Squid
+     current files from: http://www.sailingweatheronline.com/bsh_currents.html
     """
 
-    def __init__(self, filename):
+    def __init__(self, windfile, currentfile=None):
         """ WindObject constuctor create wind object
 
         :param filename: string - name of NETCDF file containing GRIB data
         """
-        self.ds = xr.open_dataset(filename, engine='netcdf4')
+
+        print("Load wind data from %s" % windfile)
+        self.ds = xr.open_dataset(windfile, engine='netcdf4')
         self.timesteps = len(self.ds.step.values)
         self.timemin = self.ds.valid_time.values[0]                     # type is numpy.datetime64
         self.timemax = self.ds.valid_time.values[self.timesteps - 1]    # type is numpy.datetime64
@@ -233,6 +240,11 @@ class WindObject(object):
         self.longmin = self.ds.longitude.values[0]                      # type is ?
         self.longmax = self.ds.longitude.values[self.longsteps - 1]     # type is ?
         self.longstep = (self.longmax - self.longmin) / self.longsteps
+
+        if currentfile:
+            print("Load currents from: %s" % currentfile)
+        else:
+            print("No current data available")
 
     def get_stats(self):
         """ get_statistics show contents of GRIB file
@@ -315,7 +327,7 @@ class PolarObject(object):
         """
 
         self.polar = np.loadtxt(filename, delimiter='\t', dtype=np.float32)
-
+        print(f"Load polar data from {filename}")
         # create list of TWS values
         self.tws_vector = []
         for i in range(0, self.polar.shape[0]):
@@ -450,15 +462,30 @@ class PolarObject(object):
 class Itinerary(object):
 
     #    def __init__(self, route, start_time):       # constructor with route and start time
-    def __init__(self, route, start_time):
+    def __init__(self, id, route, start_time):
+        self.id = id
         _org = route.wpt(0)
         self.dest = route.wpt(1)
         self.tpt_list = []  # track point list (track point = way point + time)
         tpt = TrackPoint(_org.get_lat(), _org.get_long(), start_time)
         self.tpt_list.append(tpt)
+        self.courselist = []
+
+    def get_id(self):
+        """ get id of itinerary
+
+        :return: int - itinerary id
+        """
+        return(self.id)
 
     def last_tpt(self):
         return self.tpt_list[-1]
+
+    def tpt_count(self):
+        return len(self.tpt_list)
+
+    def get_tpt(self, i):
+        return self.tpt_list[i]
 
     def add_tpt(self, lat, long, time):
         tpt = TrackPoint(lat, long, time)
@@ -477,6 +504,37 @@ class Itinerary(object):
         lat2 = self.dest.get_lat()
         long2 = self.dest.get_long()
         return DTW(lat1, long1, lat2, long2)
+
+    def elap_time(self):
+        start  = self.tpt_list[0].get_time()
+        finish = self.tpt_list[-1].get_time()
+        minutes = (finish - start) / np.timedelta64(1, 'm')
+        return minutes
+
+    def get_courselist(self):
+        """ get courselist - list of subsequent courses between rack points
+
+        :return: list of int - list of courses submitted in add_step()
+        """
+        return self.courselist
+
+    def add_step(self, wo, po, step, crs):
+        self.courselist.append(crs)
+        _cur_loc = self.last_tpt().get_wpt()
+        _cur_time = self.last_tpt().get_time()
+        _twd = wo.get_twd(self.last_tpt())
+        _tws = wo.get_tws(self.last_tpt())
+        _bsp = po.get_bsp(tws=_tws, twa=TWA(twd=_twd, hea=crs))
+        _dtw = self.dist_to_go()
+
+        if _bsp * step > _dtw:
+            duration = _dtw / _bsp
+            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=crs, dist=_bsp * duration)
+            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(duration * 60), 'm'))
+        else:
+            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=crs, dist=_bsp * step)
+            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(step * 60), 'm'))
+
 # end Itinerary
 
 def TWA(twd, hea):

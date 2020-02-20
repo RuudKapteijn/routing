@@ -8,6 +8,20 @@ from sys import version
 from datetime import datetime
 from copy import deepcopy
 
+def ind_fitness(ind):
+
+    # print(f"{ind.dist_to_go()}, {ind.elap_time()}")
+
+    if ind.dist_to_go() < 0.01:             # destination reached
+        distance_score = 10000
+    else:
+        distance_score = int(100 / ind.dist_to_go())
+
+    time_score = int(100000 / ind.elap_time())
+
+    return distance_score + time_score * 5
+
+
 def list_itineries(il):
     print("list itineries - count: %d" % len(il))
 
@@ -44,6 +58,7 @@ def itinery_add_step(il, i, wo, po, step):
     else:
         new_loc = rt.new_crd(lat=it.last_tpt().get_lat(), long=it.last_tpt().get_long(), hea=_btw, dist=_bsp * step)
         it.add_tpt(new_loc['lat'], new_loc['long'], it.last_tpt().get_time() + np.timedelta64(int(step * 60), 'm'))
+    it.courselist.append(int(_btw))
 
     il.append(it)               # add new itinerary to list
     del(il[i])                  # remove old itinerary
@@ -65,7 +80,7 @@ try:
     STEPTIME = 0.25          # steps of 15 minutes / quarter hour
 
     itineraries = []
-    it = rt.Itinerary(route=rte, start_time=start_time)             # create first itinerary
+    it = rt.Itinerary(id="*", route=rte, start_time=start_time)             # create first itinerary
     itineraries.append(it)                                          # put first itinerary in list
     progress = True
     dest_reached = False
@@ -82,6 +97,9 @@ try:
         iter += 1
 
     print("dest_reached: %s" % (str(dest_reached)))
+    it = itineraries[0]
+    print("Best individual distance: %f, minutes: %f, fitness: %d, courses: %s" %
+          (it.dist_to_go(), it.elap_time(), ind_fitness(it), str(it.get_courselist())))
 
 except Exception as e:
     print(e.message)
