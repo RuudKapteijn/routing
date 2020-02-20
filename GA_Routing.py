@@ -17,7 +17,7 @@ def ind_fitness(ind):
     else:
         distance_score = int(100 / ind.dist_to_go())
 
-    time_score = int(100000 / ind.elap_time())
+    time_score = int(6000000 / ind.elap_time())
 
     return distance_score + time_score * 5
 
@@ -160,7 +160,7 @@ i = 1
 while True:
     sorted_population = sort_population_by_fitness(population)
     best = sorted_population[-1]
-    print("Generation %2d, population: %4d - best individual dist: %6.3f nm, time: %4.1f min, fitness: %d, courses: %s" %
+    print("Generation %2d, population: %4d - best individual dist: %6.3f nm, time: %5.0f sec, fitness: %d, courses: %s" %
           (i, len(sorted_population), best.dist_to_go(), best.elap_time(), ind_fitness(best), str(best.get_courselist())))
     # for j in range(0, best.tpt_count()):
     #     print(f"Trackpoint {j}, time: {best.get_tpt(j).get_time()}")

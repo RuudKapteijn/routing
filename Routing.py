@@ -508,8 +508,8 @@ class Itinerary(object):
     def elap_time(self):
         start  = self.tpt_list[0].get_time()
         finish = self.tpt_list[-1].get_time()
-        minutes = (finish - start) / np.timedelta64(1, 'm')
-        return minutes
+        seconds = (finish - start) / np.timedelta64(1, 's')
+        return seconds
 
     def get_courselist(self):
         """ get courselist - list of subsequent courses between rack points
