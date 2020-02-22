@@ -152,16 +152,16 @@ start_time = np.datetime64('2020-01-31 12:00')
 print(f"{rte.stats()} at {str(start_time)}")
 
 # generate population - set of itineraries
-population = generate_population(mywo, mypo, rte, start_time, STEPTIME, 500)
+population = generate_population(mywo, mypo, rte, start_time, STEPTIME, 100)
 print(f"\nInitial Population of {len(population)} individuals")
 
-generations = 50
+generations = 1000
 i = 1
 while True:
     sorted_population = sort_population_by_fitness(population)
     best = sorted_population[-1]
-    print("Generation %2d, population: %4d - best individual dist: %6.3f nm, time: %5.0f sec, fitness: %d, courses: %s" %
-          (i, len(sorted_population), best.dist_to_go(), best.elap_time(), ind_fitness(best), str(best.get_courselist())))
+    print("Generation %2d, population: %4d - best individual dist: %6.3f nm, time: %6.3f min, fitness: %d, courses: %s" %
+          (i, len(sorted_population), best.dist_to_go(), best.elap_time() / 60, ind_fitness(best), str(best.get_courselist())))
     # for j in range(0, best.tpt_count()):
     #     print(f"Trackpoint {j}, time: {best.get_tpt(j).get_time()}")
 
@@ -170,6 +170,6 @@ while True:
     population = make_next_generation(population, mywo, mypo, rte, start_time, STEPTIME)
     i += 1
 
-print("\nOptimal result: dist: 0.00, minutes: 41.0, fitness: 22195, courses: [15, 15, 15]")
+print("\nOptimal result - distance:  0.000, minutes: 41.000, fitness: 22195, courses: [15, 15, 15]")
 
 print(f"End of script at {datetime.now()}")

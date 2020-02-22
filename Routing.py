@@ -530,10 +530,10 @@ class Itinerary(object):
         if _bsp * step > _dtw:
             duration = _dtw / _bsp
             new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=crs, dist=_bsp * duration)
-            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(duration * 60), 'm'))
+            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(duration * 3600), 's'))
         else:
             new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=crs, dist=_bsp * step)
-            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(step * 60), 'm'))
+            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(step * 3600), 's'))
 
 # end Itinerary
 
