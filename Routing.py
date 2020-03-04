@@ -13,7 +13,7 @@
 import numpy as np
 import xarray as xr
 from math import sin, asin, cos, sqrt, atan2, radians, degrees, pi
-
+import xml.etree.ElementTree as et
 
 class GribIndexException(Exception):
     """ Exception subclass to throw for index out of range of GRIB file (lat, long or time)
@@ -39,7 +39,6 @@ class WayPoint(object):
     """ Waypoint object 2D position with latitude and longitude
 
     TODO: add method to return coordinates in format deg min.dec (string)
-    TODO: add get_btw(wpt) method
     """
 
     def __init__(self, name, lat, long):
@@ -58,6 +57,13 @@ class WayPoint(object):
         else:
             self.long = long
         self.name = name
+
+    def get_name(self):
+        """ return name of the waypoint
+
+        :return: string - name of the waypoint
+        """
+        return self.name
 
     def dec_crd(self, s):
         """ decimal_coordinate transforms coordinate string deg min.dec to float
@@ -112,14 +118,34 @@ class Route(object):
 
     """
 
-    def __init__(self, name):
+    def __init__(self, name, gpxfile = None):
         """ Contructor for Route
 
-        after creation the waypoint list is empty
+        if gpxfile is not supplied after creation the waypoint list is empty
+        if gpxfile is supplied this is considered the name of a gpx (XML) file with route data
+        route is created from file
         :param name: string - name of the route
+        :param gpxfile: string - name of gpx file containing route data
         """
         self.name = name
         self.wpt_list = []
+
+        if gpxfile:
+            # open XML tree from the input file
+            tree = et.parse(gpxfile)
+            root = tree.getroot()
+            # create name space dict
+            ns = {'gpx': 'http://www.topografix.com/GPX/1/1'}
+            # find first route cq. first element with tag 'rte' (additional route tags are ignored)
+            route = root.find('gpx:rte', ns)
+            # if found rte tag cq. route != None
+            if route:
+                self.name = route.find('gpx:name', ns).text         # tag contains route name - over write name
+                # find all rtept's (route points) in route
+                for routepoint in route.findall('gpx:rtept', ns):
+                    wp = WayPoint(name=routepoint.find('gpx:name', ns).text, lat=float(routepoint.attrib['lat']),\
+                                  long=float(routepoint.attrib['lon']))
+                    self.wpt_list.append(wp)
 
     def add_wpt(self, wpt):
         """ add waypoint to the end of the route
@@ -159,10 +185,9 @@ class Route(object):
 
         :return: string - statistics of route
         """
-        res = "Route %s, %d waypoints, length: %5.2f nm, 1st bearing: %d gr" % \
-              (self.name, self.wpt_cnt(), self.dst(), self.wpt(0).btw(self.wpt(1)))
-        if len(self.wpt_list) > 2:
-            res = res + " (only first two waypoints taken into account for routing)"
+        res = "Route %s, %d waypoints, length: %5.2f nm, 1st leg (%s - %s) bearing: %d gr, distance: %5.2f" % \
+              (self.name, self.wpt_cnt(), self.dst(), self.wpt(0).get_name(), self.wpt(1).get_name(), \
+               self.wpt(0).btw(self.wpt(1)), self.wpt(0).dtw(self.wpt(1)))
         return res
 # end Route
 
@@ -217,6 +242,8 @@ class WindObject(object):
 
      (in NETCDF format) and provides wind data
      wind files from Squid
+     Traditionally, set and drift is defined as the effect a current has on a vessel's movement,
+     with set referring to direction and drift to speed
      current files from: http://www.sailingweatheronline.com/bsh_currents.html
     """
 
@@ -225,25 +252,39 @@ class WindObject(object):
 
         :param filename: string - name of NETCDF file containing GRIB data
         """
-
         print("Load wind data from %s" % windfile)
-        self.ds = xr.open_dataset(windfile, engine='netcdf4')
-        self.timesteps = len(self.ds.step.values)
-        self.timemin = self.ds.valid_time.values[0]                     # type is numpy.datetime64
-        self.timemax = self.ds.valid_time.values[self.timesteps - 1]    # type is numpy.datetime64
-        self.timestep = np.timedelta64(self.timemax - self.timemin) / self.timesteps
-        self.latsteps = len(self.ds.latitude.values)
-        self.latmin = self.ds.latitude.values[0]                        # type is ?
-        self.latmax = self.ds.latitude.values[self.latsteps - 1]        # type is ?
-        self.latstep = (self.latmax - self.latmin) / self.latsteps
-        self.longsteps = len(self.ds.longitude.values)
-        self.longmin = self.ds.longitude.values[0]                      # type is ?
-        self.longmax = self.ds.longitude.values[self.longsteps - 1]     # type is ?
-        self.longstep = (self.longmax - self.longmin) / self.longsteps
+        self.w_ds = xr.open_dataset(windfile, engine='netcdf4')
+        self.w_timesteps = len(self.w_ds.time.values)
+        self.w_timemin = self.w_ds.time.values[0]                       # type is numpy.datetime64
+        self.w_timemax = self.w_ds.time.values[-1]                      # type is numpy.datetime64
+        self.w_timestep = np.timedelta64(self.w_timemax - self.w_timemin) / self.w_timesteps
+        self.w_latsteps = len(self.w_ds.latitude.values)
+        self.w_latmin = self.w_ds.latitude.values[0]                    # type is ?
+        self.w_latmax = self.w_ds.latitude.values[-1]                   # type is ?
+        self.w_latstep = (self.w_latmax - self.w_latmin) / self.w_latsteps
+        self.w_longsteps = len(self.w_ds.longitude.values)
+        self.w_longmin = self.w_ds.longitude.values[0]                  # type is ?
+        self.w_longmax = self.w_ds.longitude.values[-1]                 # type is ?
+        self.w_longstep = (self.w_longmax - self.w_longmin) / self.w_longsteps
 
         if currentfile:
             print("Load currents from: %s" % currentfile)
+            self.c_ds = xr.open_dataset(currentfile, engine='netcdf4')
+            self.c_timesteps = len(self.c_ds.time.values)
+            self.c_timemin = self.c_ds.time.values[0]                       # type is numpy.datetime64
+            self.c_timemax = self.c_ds.time.values[-1]                      # type is numpy.datetime64
+            self.c_timestep = np.timedelta64(self.c_timemax - self.c_timemin) / self.c_timesteps
+            self.c_latsteps = len(self.c_ds.latitude.values)
+            self.c_latmin = self.c_ds.latitude.values[0]                    # type is ?
+            self.c_latmax = self.c_ds.latitude.values[-1]                   # type is ?
+            self.c_latstep = (self.c_latmax - self.c_latmin) / self.c_latsteps
+            self.c_longsteps = len(self.c_ds.longitude.values)
+            self.c_longmin = self.c_ds.longitude.values[0]                  # type is ?
+            self.c_longmax = self.c_ds.longitude.values[-1]                 # type is ?
+            self.c_longstep = (self.c_longmax - self.c_longmin) / self.c_longsteps
+            self.current = True
         else:
+            self.current = False
             print("No current data available")
 
     def get_stats(self):
@@ -251,10 +292,42 @@ class WindObject(object):
 
         :return: string - printable description string
         """
-        return str(self.ds)
+        return str(self.w_ds)
 
-    def _get_wind(self, tpt):
-        """ _get_wind private method to calculate true wind direction and true wind speed at lat, long & time
+    def _get_ground_wind(self, tpt):
+        """ _get_ground_wind private method to calculate true wind direction and true wind speed at lat, long & time
+
+        return ground wind without taking current into account (wind at anchor)
+        :param tpt: track_point with lat, long & time to calculate wind for
+        :return: dict with tws: tws as float, twd: twd as float
+        """
+        time = tpt.get_time()
+        lat = tpt.get_lat()
+        long = tpt.get_long()
+        if time < self.w_timemin or time > self.w_timemax:
+            raise GribIndexException("Wind GRIB time out of range, index: %s, min: %s, max: %s" % (
+                str(time), str(self.w_timemin), str(self.w_timemax)))
+        if lat < self.w_latmin or lat > self.w_latmax:
+            raise GribIndexException("Wind GRIB latitude out of range, index: %s, min: %s, max: %s" % (
+                str(lat), str(self.w_latmin), str(self.w_latmax)))
+        if long < self.w_longmin or long > self.w_longmax:
+            raise GribIndexException("Wind GRIB longitude out of range, index: %s, min: %s, max: %s" % (
+                str(long), str(self.w_longmin), str(self.w_longmax)))
+
+        _timeindex = np.rint((time - self.w_timemin) / self.w_timestep).astype(int)
+        _latindex = np.rint((lat - self.w_latmin) / self.w_latstep).astype(int)
+        _longindex = np.rint((long - self.w_longmin) / self.w_longstep).astype(int)
+        try:
+            u10 = self.w_ds.UGRD_10maboveground.values[_timeindex, _latindex, _longindex]
+            v10 = self.w_ds.VGRD_10maboveground.values[_timeindex, _latindex, _longindex]
+        except IndexError:
+            raise GribIndexException(f"Wind GRIB Index Exception\ntime: {self.w_timemin} - {time} - {self.w_timemax}\n"
+                                     f"lat: {self.w_latmin} - {lat} - {self.w_latmax}, long: time: {self.w_longmin} - {long} - {self.w_longmax}\n")
+        return {'tws': sqrt(u10**2 + v10**2) * 3600/1852, 'twd': degrees(atan2(u10, v10)) % 360, 'hor': u10, 'ver': v10}
+    # _get_wind()
+
+    def _get_current(self, tpt):
+        """ _get_current private method to calculate true wind direction and true wind speed at lat, long & time
 
         :param tpt: track_point with lat, long & time to calculate wind for
         :return: dict with tws: tws as float, twd: twd as float
@@ -262,25 +335,39 @@ class WindObject(object):
         time = tpt.get_time()
         lat = tpt.get_lat()
         long = tpt.get_long()
-        if time < self.timemin or time > self.timemax:
-            raise GribIndexException("GRIB time out of range, index: %s, min: %s, max: %s" % (
-            str(time), str(self.timemin), str(self.timemax)))
-        if lat < self.latmax or lat > self.latmin:  # latitude coordinates are inverted
-            raise GribIndexException("GRIB latitude out of range, index: %s, min: %s, max: %s" % (
-            str(lat), str(self.latmax), str(self.latmin)))
-        if long < self.longmin or long > self.longmax:
-            raise GribIndexException("GRIB longitude out of range, index: %s, min: %s, max: %s" % (
-            str(long), str(self.longmin), str(self.longmax)))
+        if time < self.c_timemin or time > self.c_timemax:
+            raise GribIndexException("Current GRIB time out of range, index: %s, min: %s, max: %s" % (
+                str(time), str(self.c_timemin), str(self.c_timemax)))
+        if lat < self.c_latmin or lat > self.c_latmax:
+            raise GribIndexException("Current GRIB latitude out of range, index: %s, min: %s, max: %s" % (
+                str(lat), str(self.c_latmin), str(self.c_latmax)))
+        if long < self.c_longmin or long > self.c_longmax:
+            raise GribIndexException("Current GRIB longitude out of range, index: %s, min: %s, max: %s" % (
+                str(long), str(self.c_longmin), str(self.c_longmax)))
 
-        _timeindex = np.rint((time - self.timemin) / self.timestep).astype(int)
-        _latindex = np.rint((lat - self.latmin) / self.latstep).astype(int)
-        _longindex = np.rint((long - self.longmin) / self.longstep).astype(int)
+        _timeindex = np.rint((time - self.c_timemin) / self.c_timestep).astype(int)
+        _latindex = np.rint((lat - self.c_latmin) / self.c_latstep).astype(int)
+        _longindex = np.rint((long - self.c_longmin) / self.c_longstep).astype(int)
+        print(f"timeindex: {_timeindex}, latindex: {_latindex}, longindex: {_longindex}")
+        try:
+            u10 = self.c_ds.UOGRD_2mbelowsealevel.values[_timeindex, _latindex, _longindex]
+            v10 = self.c_ds.VOGRD_2mbelowsealevel.values[_timeindex, _latindex, _longindex]
+        except IndexError:
+            print("Current GRIB IndexException")
+            raise GribIndexException(f"Current GRIB Index Exception\ntime: {self.c_timemin} - {time} - {self.c_timemax}\n"
+                                     f"lat: {self.c_latmin} - {lat} - {self.c_latmax}, long: time: {self.c_longmin} - {long} - {self.c_longmax}\n")
 
-        u10 = self.ds.u10.values[_timeindex, _latindex, _longindex]
-        v10 = self.ds.v10.values[_timeindex, _latindex, _longindex]
+        if np.isnan(u10) or np.isnan(v10):
+            print(f"Current retrieval error, u10: {u10}, v10: {v10}")
+            u10 = 0.0
+            v10 = 0.0
+        _dft = sqrt(u10**2 + v10**2) * 3600/1852
+        _set = degrees(atan2(u10, v10)) % 360
+        if np.isnan(_dft) or np.isnan(_set):
+            print(f"Current retrieval error, _dft: {_dft}, _set: {_set}")
 
-        return {'tws': sqrt(u10 ** 2 + v10 ** 2) * 3600 / 1852, 'twd': atan2(u10, v10) * 180 / pi + 180}
-    # _get_wind()
+        return {'dft': _dft, 'set': _set, 'hor': u10, 'ver': v10}
+    # _get_current()
 
     def get_tws(self, tpt):
         """ public method to get true wind speed
@@ -288,8 +375,13 @@ class WindObject(object):
         :param tpt: trackpoint with latitude, longitude and time
         :return: float - true wind speed in knots
         """
-
-        return self._get_wind(tpt)['tws']
+        if not self.current:
+            # print(f"get_tws: {self._get_ground_wind(tpt)['tws']}")
+            return self._get_ground_wind(tpt)['tws']
+        else:
+            res_vector = sum_vectors(self._get_ground_wind(tpt)['twd'], self._get_ground_wind(tpt)['tws'], \
+                                     opposite_direction(self._get_current(tpt)['set']), self._get_current(tpt)['dft'])
+            return res_vector['len']
     # get_tws()
 
     def get_twd(self, tpt):
@@ -298,8 +390,26 @@ class WindObject(object):
         :param tpt: trackpoint with latitude, longitude and time
         :return: int - true wind direction in degrees
         """
-        return self._get_wind(tpt)['twd']
-    # get_tws()
+        if not self.current:
+            return self._get_ground_wind(tpt)['twd']
+        else:
+            _gwd = self._get_ground_wind(tpt)['twd']
+            _gws = self._get_ground_wind(tpt)['tws']
+            _set = self._get_current(tpt)['set']
+            _dft = self._get_current(tpt)['dft']
+            res_vector = sum_vectors(_gwd, _gws, opposite_direction(_set), _dft)
+            print(f"_gwd: {_gwd}, _gws: {_gws}, _set: {_set}, _dft: {_dft}, twd: {res_vector['dir']}")
+            return res_vector['dir']
+    # get_twd()
+
+    def current(self):
+        return self.current
+
+    def get_set(self, tpt):
+        return self._get_current(tpt)['set']
+
+    def get_dft(self, tpt):
+        return self._get_current(tpt)['dft']
 
 # end of WindObject
 
@@ -336,25 +446,32 @@ class PolarObject(object):
         
         # create 2D array of TWA values
         self.twa_array = self.polar.copy()
-        self.twa_array = np.delete(self.twa_array, 0, 1)  # delete 1st column with windspeeds
-        self.twa_array = np.delete(self.twa_array, 0, 1)  # delete 2nd column (new first) with TWA's = 0
-        self.twa_array = np.delete(self.twa_array, 0, 1)  # delete 3rd column (new first) with BSP's at TWA = 0
-        cols = self.twa_array.shape[1] / 2
+        self.twa_array = np.delete(arr=self.twa_array, obj=0, axis=1)  # delete 1st column with windspeeds
+        # check if first two columns only contain zero's - if so, remove
+        if round(np.sum(a=self.twa_array, axis=0)[0]) == 0 and round(np.sum(a=self.twa_array, axis=0)[1]) == 0:
+            self.twa_array = np.delete(arr=self.twa_array, obj=0, axis=1)  # delete 2nd col (now 1st) with TWA's = 0
+            self.twa_array = np.delete(arr=self.twa_array, obj=0, axis=1)  # delete 3rd col (now 1st) with BSP's = 0
+        cols = self.twa_array.shape[1] / 2                             # number of twa, bsp pairs remaining
         i = 1
-        while self.twa_array.shape[1] > cols:
-            self.twa_array = np.delete(self.twa_array, i, 1)
+        while self.twa_array.shape[1] > cols:                          # remove the bsp column, keep the twa columns
+            self.twa_array = np.delete(arr=self.twa_array, obj=i, axis=1)
             i += 1
 
         # create 2D array of BSP values
         self.bsp_array = self.polar.copy()
-        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 1st column with windspeeds
-        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 2nd column (new first) with TWA's = 0
-        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 3rd column (new first) with BSP's at TWA = 0
-        self.bsp_array = np.delete(self.bsp_array, 0, 1)  # delete 4rd column (new first) with TWA's (likely 30)
+        self.bsp_array = np.delete(arr=self.bsp_array, obj=0, axis=1)  # delete 1st column with windspeeds
+        # check if first two columns only contain zero's - if so, remove
+        if round(np.sum(a=self.bsp_array, axis=0)[0]) == 0 and round(np.sum(a=self.bsp_array, axis=0)[1]) == 0:
+            self.bsp_array = np.delete(arr=self.bsp_array, obj=0, axis=1)  # delete 2nd col (now 1st) with TWA's = 0
+            self.bsp_array = np.delete(arr=self.bsp_array, obj=0, axis=1)  # delete 3rd col (now 1st) with BSP's = 0
+        self.bsp_array = np.delete(arr=self.bsp_array, obj=0, axis=1)  # delete 4rd column (now 1st) TWA's (likely 30)
         i = 1
-        while self.bsp_array.shape[1] > cols:
+        while self.bsp_array.shape[1] > cols:                          # remove twa columns, keep bsp columns
             self.bsp_array = np.delete(self.bsp_array, i, 1)
             i += 1
+
+        if self.bsp_array.shape[0] != self.twa_array.shape[0] or self.bsp_array.shape[1] != self.twa_array.shape[1]:
+            raise PolarException("TWA matrix and BSP matrix do not have the same dimensions")
 
     def print_stats(self):
         """ print statistics of polar file
@@ -375,14 +492,13 @@ class PolarObject(object):
         :return: list of true wind angles - floats
         """
 
-        # if tws >= max wind in polar return max wind vector
+        # if tws >= max wind in polar return max wind twa vector
         if tws >= self.tws_vector[-1]:
             return self.twa_array[-1,]
 
-        # if tws < min wind in polar return interpolation with 0
+        # if tws < min wind in polar return min wind twa vector
         if tws < self.tws_vector[0]:
-            f = 1 - (self.tws_vector[0] - tws) / self.tws_vector[0]
-            return self.twa_array[0,] * f
+            return self.twa_array[0,]
 
         # find wind interval in TWS
         for i in range(0, len(self.tws_vector) - 1):
@@ -394,7 +510,9 @@ class PolarObject(object):
                 d = self.tws_vector[i + 1] - self.tws_vector[i]
                 f1 = 1 - (tws - self.tws_vector[i]) / d
                 f2 = 1 - (self.tws_vector[i + 1] - tws) / d
-                return self.twa_array[i,] * f1 + self.twa_array[i + 1,] * f2
+                twa_vector = self.twa_array[i,] * f1 + self.twa_array[i + 1,] * f2
+                # print(f"get_twa_vector, tws: {tws}, i: {i},  f1: {f1}, f2: {f2}, twa_vector: {str(twa_vector)}")
+                return twa_vector
         raise PolarException("no true wind angle vector calculated")
 
     def _get_bsp_vector(self, tws):
@@ -405,13 +523,16 @@ class PolarObject(object):
         """
 
         # if tws >= max wind in polar return max wind vector
+        # print(f"_get_bsp_vector, tws: {tws}, tws_vector: {str(self.tws_vector)}")
         if tws >= self.tws_vector[-1]:
             return self.bsp_array[-1,]
 
         # if tws < min wind in polar return interpolation with 0
         if tws < self.tws_vector[0]:
             f = 1 - (self.tws_vector[0] - tws) / self.tws_vector[0]
-            return self.bsp_array[0,] * f
+            _bsp_array = self.bsp_array[0,] * f
+            # print(f"f: {f}, _bsp_array: {str(_bsp_array)}")
+            return _bsp_array
 
         # find wind interval in TWS
         for i in range(0, len(self.tws_vector) - 1):
@@ -434,28 +555,36 @@ class PolarObject(object):
         :param twa: int - true wind angle in degrees
         :return: float - boat speed in knots
         """
-
+        # print(f"get_bsp, tws: {tws}, twa: {twa}")
         twa= abs(twa)
         if tws < 0 or tws > 100 or twa < 0 or twa > 180:
             raise PolarException("PolarObject get_bsp(tws, twa) TWS or abs(TWA) out of range (%5.2f, %d)" % (tws, twa))
 
         twa_vector = self.get_twa_vector(tws)
         bsp_vector = self._get_bsp_vector(tws)
-        if twa < twa_vector[0]:  # is closer to wind than minimum TWA in
+        # print(f"get_bsp, tws: {tws}, twa: {twa}, twa_vector: {str(twa_vector)}, bsp_vector: {str(bsp_vector)}")
+        if twa < twa_vector[0]:  # twa is closer to wind than minimum TWA in
             return 0.0
-        else:
-            # find twa interval in TWA
-            for i in range(0, len(twa_vector)):
-                # if twa == TWA no interpolation required
-                if twa == twa_vector[i]:
-                    return bsp_vector[i]
-                # interpolate between TWA[i] and TWA[i+1]
-                if twa > twa_vector[i] and twa < twa_vector[i + 1]:
-                    d = twa_vector[i + 1] - twa_vector[i]
-                    f1 = 1 - (twa - twa_vector[i]) / d
-                    f2 = 1 - (twa_vector[i + 1] - twa) / d
-                    return bsp_vector[i] * f1 + bsp_vector[i + 1] * f2
-            raise PolarException("no wind value calculated")
+        if twa == round(twa_vector[-1]):
+            return bsp_vector[-1]
+        if twa > twa_vector[-1]: # twa is euqal or more downwind than max TWA in vector
+            factor = (180 - twa) / (180 - twa_vector[-1])
+            result = bsp_vector[-1] * min(max(factor, 0.5), 1.0)
+            # print(f"twa: {twa}, twa_vector[-1]: {twa_vector[-1]}, factor: {factor}, bsp_vector[-1]: {bsp_vector[-1]}, result: {result}")
+            return result
+        # find twa interval in TWA
+        for i in range(0, len(twa_vector)):
+            # if twa == TWA no interpolation required
+            if twa == round(twa_vector[i]):
+                return bsp_vector[i]
+            # interpolate between TWA[i] and TWA[i+1]
+            # print(f"twa: {twa}, i: {i}, len(twa_vector): {len(twa_vector)}, twa_vector: {str(twa_vector)}")
+            if twa > twa_vector[i] and twa < twa_vector[i + 1]:
+                d = twa_vector[i + 1] - twa_vector[i]
+                f1 = 1 - (twa - twa_vector[i]) / d
+                f2 = 1 - (twa_vector[i + 1] - twa) / d
+                return bsp_vector[i] * f1 + bsp_vector[i + 1] * f2
+        raise PolarException("no wind value calculated")
 
 # end PolarObject
 
@@ -506,10 +635,30 @@ class Itinerary(object):
         return DTW(lat1, long1, lat2, long2)
 
     def elap_time(self):
+        """return elapsed time of itinerary
+
+        :return: float - elapsed time of itinerary in milli seconds
+        """
         start  = self.tpt_list[0].get_time()
         finish = self.tpt_list[-1].get_time()
-        seconds = (finish - start) / np.timedelta64(1, 's')
-        return seconds
+        milliseconds = (finish - start) / np.timedelta64(1, 'ms')
+        return milliseconds
+
+    def distance(self):
+        """return effective distance of itinerary
+
+        :return: float - effective distance of itinerary in nm
+        """
+        start = self.tpt_list[0].get_wpt()
+        finish = self.tpt_list[-1].get_wpt()
+        return start.dtw(finish)
+
+    def avg_bsp(self):
+        """return average boat speed over itinerary
+        :return: float - average boat speed in kn
+        """
+        return self.distance() / (self.elap_time() / (1000 * 3600))
+
 
     def get_courselist(self):
         """ get courselist - list of subsequent courses between rack points
@@ -524,16 +673,26 @@ class Itinerary(object):
         _cur_time = self.last_tpt().get_time()
         _twd = wo.get_twd(self.last_tpt())
         _tws = wo.get_tws(self.last_tpt())
+        if wo.current:
+            _set = wo.get_set(self.last_tpt())
+            _dft = wo.get_dft(self.last_tpt())
+        else:
+            _set = 0
+            _dft = 0.0
+        # print(f"set: {_set} gr, dft: {_dft} nm")
+        # print(f"add_step, crs: {crs}, _twd: {_twd}, TWA: {TWA(twd=_twd, hea=crs)} ")
         _bsp = po.get_bsp(tws=_tws, twa=TWA(twd=_twd, hea=crs))
         _dtw = self.dist_to_go()
 
         if _bsp * step > _dtw:
             duration = _dtw / _bsp
-            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=crs, dist=_bsp * duration)
-            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(duration * 3600), 's'))
+            vector = sum_vectors(crs, _bsp * duration, _set, _dft * duration)
+            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=vector['dir'], dist=vector['len'])
+            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(duration * 3600 * 1000), 'ms'))
         else:
-            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=crs, dist=_bsp * step)
-            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(step * 3600), 's'))
+            vector = sum_vectors(crs, _bsp * step, _set, _dft * step)
+            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=vector['dir'], dist=vector['len'])
+            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(step * 3600 * 1000), 'ms'))
 
 # end Itinerary
 
@@ -544,9 +703,10 @@ def TWA(twd, hea):
     :param hea: int - boat heading in degrees
     :return: int - true wind angle between heading and twd, negative is port, positive is starboard
     """
-
-    r = twd - hea
-    if r > -179 and r <= 180:
+    # print(f"TWA(twd={twd}, hea={hea})")
+    r = round(twd - hea)
+    # print(f"-TWA-, twd: {twd}, hea: {hea}, r: {r}")
+    if r >= -179 and r <= 180:
         # print("TWA(1. twd=%d, hea=%d, res=%d)" % (twd, hea, r))
         return r
     if r == -180:
@@ -576,7 +736,7 @@ def BTW(lat1, long1, lat2, long2):
     _dlong = _long2 - _long1
     y = sin(_dlong) * cos(_lat2)
     x = cos(_lat1) * sin(_lat2) - sin(_lat1) * cos(_lat2) * cos(_dlong)
-    return (degrees(atan2(y, x)) + 360) % 360  # fmod((degrees(atan2(y, x)) + 360.0), 360.0)
+    return degrees(atan2(y, x)) % 360
 # BTW()
 
 def new_crd(lat, long, hea, dist):
@@ -594,6 +754,34 @@ def new_crd(lat, long, hea, dist):
     _lat2 = asin(sin(_lat) * cos(dist / R) + cos(_lat) * sin(dist / R) * cos(_hea))
     _long2 = _long + atan2(sin(_hea) * sin(dist / R) * cos(_lat), cos(dist / R) - sin(_lat) * sin(_lat2))
     return {'lat': degrees(_lat2), 'long': degrees(_long2)}
+
+def opposite_direction(dir):
+    """ return opposite direction of a course
+
+    :param dir: int direction in degrees
+    :return: int - opposite direction in degrees
+    """
+    return (dir + 180) % 360
+# opposite_direction()
+
+def sum_vectors(v1_dir, v1_len, v2_dir, v2_len):
+    """add two vectors with direction and length
+    """
+    vertical   = cos(radians(v1_dir)) * v1_len + cos(radians(v2_dir)) * v2_len
+    # print(f"vertical: {vertical}")
+    horizontal = sin(radians(v1_dir)) * v1_len + sin(radians(v2_dir)) * v2_len
+    # print(f"horizonal: {horizontal}")
+    dir = degrees(atan2(horizontal, vertical)) % 360
+    len = sqrt(pow(vertical, 2) + pow(horizontal, 2))
+    return {'dir': dir, 'len': len}
+
+def version():
+    """version function returns version string
+
+    :return: string - version string
+    """
+    return("Routing library version Oosterschelde 0.1.0 (beta)")
+
 
 # marks = {"EA1"    :["52° 34,777'", "5° 13,433'"], \
 #          "KG10"   :["52° 40,656'", "5° 16,039'"], \
