@@ -10,19 +10,21 @@
 # Ruud Kapteijn, 9-feb-2020
 ###############################################################################################
 
-import numpy as np
+from __future__ import annotations                  # allows forward references to class definitions (e.g. WayPoint)
+import numpy as np  # type: ignore
 import xarray as xr
 from math import sin, asin, cos, sqrt, atan2, radians, degrees, pi
 import xml.etree.ElementTree as et
+from datetime import datetime, timedelta
+from typing import Union, List, Dict
 
 class GribIndexException(Exception):
     """ Exception subclass to throw for index out of range of GRIB file (lat, long or time)
 
     constructor parameters: message - string - error message
     """
-
-    def __init__(self, message):
-        self.message = message
+    def __init__(self, message: str):
+        self.message:str = message
 # GribIndexException
 
 class PolarException(Exception):
@@ -30,9 +32,8 @@ class PolarException(Exception):
 
     constructor parameters: message - string - error message
     """
-
-    def __init__(self, message):
-        self.message = message
+    def __init__(self, message: str):
+        self.message:str = message
 # PolarException
 
 class WayPoint(object):
@@ -41,47 +42,46 @@ class WayPoint(object):
     TODO: add method to return coordinates in format deg min.dec (string)
     """
 
-    def __init__(self, name, lat, long):
+    def __init__(self, name: str, lat: Union[float, str], long: Union[float, str]) -> None:
         """ Waypoint constructor - creates waypoint
 
         :param name: string - name of the waypoint
         :param lat:  float  - latitude of the waypoint as degrees.decimal degrees or string - converted with dec_crd()
         :param long: float  - longitude of the waypoint as degrees.decimal degrees or string - converted with dec_crd()
         """
-        if type(lat) is str:
+        self.lat: float
+        self.long: float
+        if isinstance(lat, str):
             self.lat = self.dec_crd(lat)
-        else:
+        if isinstance(lat, float):
             self.lat = lat
-        if type(long) is str:
+        if isinstance(long, str):
             self.long = self.dec_crd(long)
-        else:
+        if isinstance(long, float):
             self.long = long
-        self.name = name
+        self.name: str = name
 
-    def get_name(self):
-        """ return name of the waypoint
-
-        :return: string - name of the waypoint
-        """
+    def get_name(self) -> str:
         return self.name
 
-    def dec_crd(self, s):
+    @classmethod
+    def dec_crd(cls, s: str) -> float:
         """ decimal_coordinate transforms coordinate string deg min.dec to float
 
         :param s: coordinate in format "52° 34,777'"
         :return: coordinate as float (degrees.decimal degrees)
         """
-        c = s.split(" ")
+        c: List[str] = s.split(" ")
         # print("c[0]: -%s-" % (c[0]))
-        c0 = c[0][0:len(c[0]) - 1]
+        c0: str = c[0][0:len(c[0]) - 1]
         # c0 = c[0][0:len(c[0]) - 2]               # changed -1 to -2 for UTF-8 character (2 bytes)
         # print("c0: -%s-" % (c0))
-        c1 = c[1][0:len(c[1]) - 1]
+        c1: str = c[1][0:len(c[1]) - 1]
         c1 = c1.replace(",", ".")
         # print("c1: -%s-" % (c1))
         return float(c0) + float(c1) / 60
 
-    def dtw(self, wpt):
+    def dtw(self, wpt: WayPoint) -> float:
         """distance to waypoint calculates distance from self waypoint to wpt
 
         :param wpt: waypoint to calculate distance to
@@ -89,7 +89,7 @@ class WayPoint(object):
         """
         return DTW(self.lat, self.long, wpt.get_lat(), wpt.get_long())
 
-    def btw(self, wpt):
+    def btw(self, wpt: WayPoint) -> float:
         """bearing to waypoint calculates bearing from self waypoint to wpt
 
         :param wpt: waypoint to calculate bearing to
@@ -97,38 +97,27 @@ class WayPoint(object):
         """
         return BTW(self.lat, self.long, wpt.get_lat(), wpt.get_long())
 
-    def get_lat(self):
-        """ get_latitude
+    def get_lat(self) -> float:
+         return self.lat
 
-        :return: latitude of waypoint as float - degrees.decimal degrees
-        """
-        return self.lat
-
-    def get_long(self):
-        """ get_longitude
-
-        :return: longitude of waypoint as float - degrees.decimal degrees
-        """
-        return (self.long)
-
+    def get_long(self) -> float:
+        return self.long
 # end WayPoint
 
-class Route(object):
-    """Route - series of waypoints
+class Route(object):                                # Route - series of waypoints
 
-    """
-
-    def __init__(self, name, gpxfile = None):
+    def __init__(self, name: str, gpxfile: str = None) -> None:
         """ Contructor for Route
 
         if gpxfile is not supplied after creation the waypoint list is empty
         if gpxfile is supplied this is considered the name of a gpx (XML) file with route data
         route is created from file
-        :param name: string - name of the route
-        :param gpxfile: string - name of gpx file containing route data
+        :param name - name of the route
+        :param gpxfile - name of gpx file containing route data
         """
-        self.name = name
-        self.wpt_list = []
+        self.name: str = name
+        self.wpt_list: List[WayPoint] = []
+        self.distance: float = 0.0
 
         if gpxfile:
             # open XML tree from the input file
@@ -140,51 +129,31 @@ class Route(object):
             route = root.find('gpx:rte', ns)
             # if found rte tag cq. route != None
             if route:
-                self.name = route.find('gpx:name', ns).text         # tag contains route name - over write name
+                # tag contains route name - over write name
+                self.name = route.find('gpx:name', ns).text # type: ignore
                 # find all rtept's (route points) in route
                 for routepoint in route.findall('gpx:rtept', ns):
-                    wp = WayPoint(name=routepoint.find('gpx:name', ns).text, lat=float(routepoint.attrib['lat']),\
-                                  long=float(routepoint.attrib['lon']))
-                    self.wpt_list.append(wp)
+                    _name: str   = routepoint.find('gpx:name', ns).text    # type: ignore
+                    _lat: float  = float(routepoint.attrib['lat'])         # type: ignore
+                    _long: float = float(routepoint.attrib['lon'])         # type: ignore
+                    wp = WayPoint(name = _name, lat = _lat, long = _long)
+                    self.add_wpt(wp)
 
-    def add_wpt(self, wpt):
-        """ add waypoint to the end of the route
-
-        :param wpt: Waypoint - object of class waypoint
-        :return: na
-        """
+    def add_wpt(self, wpt: WayPoint) -> None:       # add waypoint to the end of the route
         self.wpt_list.append(wpt)
+        if self.wpt_cnt() > 1:
+            self.distance += self.wpt_list[-2].dtw(self.wpt_list[-1])
 
-    def wpt(self, i):
-        """return i-th waypoint of the waypoint list
-
-        :param i: int index should be between 0 and len(wpt_list)
-        :return: Waypoint - object of class waypoint
-        """
+    def wpt(self, i: int) -> WayPoint:              # return i-th waypoint of the waypoint list
         return self.wpt_list[i]
 
-    def dst(self):
-        """ distance calculate length of route in nm
+    def dst(self) -> float:                         # distance calculate length of route in nm
+        return self.distance
 
-        :return: float - length of route in nm
-        """
-        _dist = 0.0
-        for i in range(0, len(self.wpt_list) - 1):
-            _dist += self.wpt_list[i].dtw(self.wpt_list[i + 1])
-        return _dist
-
-    def wpt_cnt(self):
-        """ return numer of waypoint in the route
-
-        :return: int - number of waypoints in the route
-        """
+    def wpt_cnt(self) -> int:                       # return number of waypoint in the route
         return len(self.wpt_list)
 
-    def stats(self):
-        """statistics - return string of statistics
-
-        :return: string - statistics of route
-        """
+    def stats(self) -> str:                         # statistics - return string of statistics
         res = "Route %s, %d waypoints, length: %5.2f nm, 1st leg (%s - %s) bearing: %d gr, distance: %5.2f" % \
               (self.name, self.wpt_cnt(), self.dst(), self.wpt(0).get_name(), self.wpt(1).get_name(), \
                self.wpt(0).btw(self.wpt(1)), self.wpt(0).dtw(self.wpt(1)))
@@ -192,49 +161,30 @@ class Route(object):
 # end Route
 
 class TrackPoint(object):
-    """TrackPoint object
-    """
 
-    def __init__(self, lat, long, time):
+    def __init__(self, lat: float, long: float, time: datetime) -> None:
         """contructor of trackpoint object
 
         :param lat: float - latitude of trackpoint as degrees.dec degr
         :param long: float - longitude of trackpoint as degrees.dec degr
-        :param time: np.datetime64 - time of trackpoint
+        :param time: datetime - time of trackpoint
         """
-        self.lat = lat
-        self.long = long
-        self.time = time
+        self.lat: float = lat
+        self.long: float = long
+        self.time: datetime = time
+        self.wpt: WayPoint = WayPoint(name="tmp", lat=self.lat, long=self.long)
 
-    def get_lat(self):
-        """ get latitude of trackpoint
-
-        :return: float - return latitude of trackpoint as degrees.dec deg
-        """
+    def get_lat(self) -> float:
         return self.lat
 
-    def get_long(self):
-        """ get longitude of trackpoint
+    def get_long(self) -> float:
+        return self.long
 
-        :return: float - return longitude of trackpoint as degrees.dec deg
-        """
-        return (self.long)
+    def get_wpt(self) -> WayPoint:
+        return self.wpt
 
-    def get_wpt(self):
-        """ return latitude and longitude of trackpoint as Waypoint object
-
-        :return: waypoint object - location of track point
-        """
-        _wpt = WayPoint(name="tmp", lat=self.lat, long=self.long)
-        return _wpt
-
-    def get_time(self):
-        """get time of trackpoint
-
-        :return: np.datetime64 - time of track point
-        """
+    def get_time(self) -> datetime:
         return self.time
-
 # end TrackPoint
 
 class WindObject(object):
@@ -247,169 +197,123 @@ class WindObject(object):
      current files from: http://www.sailingweatheronline.com/bsh_currents.html
     """
 
-    def __init__(self, windfile, currentfile=None):
+    def __init__(self, windfile: str, currentfile: str = None):
         """ WindObject constuctor create wind object
 
         :param filename: string - name of NETCDF file containing GRIB data
         """
         print("Load wind data from %s" % windfile)
         self.w_ds = xr.open_dataset(windfile, engine='netcdf4')
-        self.w_timesteps = len(self.w_ds.time.values)
-        self.w_timemin = self.w_ds.time.values[0]                       # type is numpy.datetime64
-        self.w_timemax = self.w_ds.time.values[-1]                      # type is numpy.datetime64
-        self.w_timestep = np.timedelta64(self.w_timemax - self.w_timemin) / self.w_timesteps
-        self.w_latsteps = len(self.w_ds.latitude.values)
-        self.w_latmin = self.w_ds.latitude.values[0]                    # type is ?
-        self.w_latmax = self.w_ds.latitude.values[-1]                   # type is ?
-        self.w_latstep = (self.w_latmax - self.w_latmin) / self.w_latsteps
-        self.w_longsteps = len(self.w_ds.longitude.values)
-        self.w_longmin = self.w_ds.longitude.values[0]                  # type is ?
-        self.w_longmax = self.w_ds.longitude.values[-1]                 # type is ?
-        self.w_longstep = (self.w_longmax - self.w_longmin) / self.w_longsteps
-
         if currentfile:
             print("Load currents from: %s" % currentfile)
             self.c_ds = xr.open_dataset(currentfile, engine='netcdf4')
-            self.c_timesteps = len(self.c_ds.time.values)
-            self.c_timemin = self.c_ds.time.values[0]                       # type is numpy.datetime64
-            self.c_timemax = self.c_ds.time.values[-1]                      # type is numpy.datetime64
-            self.c_timestep = np.timedelta64(self.c_timemax - self.c_timemin) / self.c_timesteps
-            self.c_latsteps = len(self.c_ds.latitude.values)
-            self.c_latmin = self.c_ds.latitude.values[0]                    # type is ?
-            self.c_latmax = self.c_ds.latitude.values[-1]                   # type is ?
-            self.c_latstep = (self.c_latmax - self.c_latmin) / self.c_latsteps
-            self.c_longsteps = len(self.c_ds.longitude.values)
-            self.c_longmin = self.c_ds.longitude.values[0]                  # type is ?
-            self.c_longmax = self.c_ds.longitude.values[-1]                 # type is ?
-            self.c_longstep = (self.c_longmax - self.c_longmin) / self.c_longsteps
-            self.current = True
+            self.current: bool = True
         else:
             self.current = False
             print("No current data available")
+    #__init__()
 
-    def get_stats(self):
-        """ get_statistics show contents of GRIB file
+    def _get_wind_dataset(self) -> xr.xarray:
+        return self.w_ds
 
-        :return: string - printable description string
-        """
-        return str(self.w_ds)
+    def _get_current_dataset(self) -> xr.xarray:
+        return self.c_ds
 
-    def _get_ground_wind(self, tpt):
-        """ _get_ground_wind private method to calculate true wind direction and true wind speed at lat, long & time
-
-        return ground wind without taking current into account (wind at anchor)
-        :param tpt: track_point with lat, long & time to calculate wind for
-        :return: dict with tws: tws as float, twd: twd as float
-        """
-        time = tpt.get_time()
-        lat = tpt.get_lat()
-        long = tpt.get_long()
-        if time < self.w_timemin or time > self.w_timemax:
-            raise GribIndexException("Wind GRIB time out of range, index: %s, min: %s, max: %s" % (
-                str(time), str(self.w_timemin), str(self.w_timemax)))
-        if lat < self.w_latmin or lat > self.w_latmax:
-            raise GribIndexException("Wind GRIB latitude out of range, index: %s, min: %s, max: %s" % (
-                str(lat), str(self.w_latmin), str(self.w_latmax)))
-        if long < self.w_longmin or long > self.w_longmax:
-            raise GribIndexException("Wind GRIB longitude out of range, index: %s, min: %s, max: %s" % (
-                str(long), str(self.w_longmin), str(self.w_longmax)))
-
-        _timeindex = np.rint((time - self.w_timemin) / self.w_timestep).astype(int)
-        _latindex = np.rint((lat - self.w_latmin) / self.w_latstep).astype(int)
-        _longindex = np.rint((long - self.w_longmin) / self.w_longstep).astype(int)
-        try:
-            u10 = self.w_ds.UGRD_10maboveground.values[_timeindex, _latindex, _longindex]
-            v10 = self.w_ds.VGRD_10maboveground.values[_timeindex, _latindex, _longindex]
-        except IndexError:
-            raise GribIndexException(f"Wind GRIB Index Exception\ntime: {self.w_timemin} - {time} - {self.w_timemax}\n"
-                                     f"lat: {self.w_latmin} - {lat} - {self.w_latmax}, long: time: {self.w_longmin} - {long} - {self.w_longmax}\n")
-        return {'tws': sqrt(u10**2 + v10**2) * 3600/1852, 'twd': degrees(atan2(u10, v10)) % 360, 'hor': u10, 'ver': v10}
-    # _get_wind()
-
-    def _get_current(self, tpt):
+    def get_current(self, tpt: TrackPoint) -> Dict[str, float]:
         """ _get_current private method to calculate true wind direction and true wind speed at lat, long & time
 
         :param tpt: track_point with lat, long & time to calculate wind for
         :return: dict with tws: tws as float, twd: twd as float
         """
-        time = tpt.get_time()
-        lat = tpt.get_lat()
-        long = tpt.get_long()
-        if time < self.c_timemin or time > self.c_timemax:
-            raise GribIndexException("Current GRIB time out of range, index: %s, min: %s, max: %s" % (
-                str(time), str(self.c_timemin), str(self.c_timemax)))
-        if lat < self.c_latmin or lat > self.c_latmax:
-            raise GribIndexException("Current GRIB latitude out of range, index: %s, min: %s, max: %s" % (
-                str(lat), str(self.c_latmin), str(self.c_latmax)))
-        if long < self.c_longmin or long > self.c_longmax:
-            raise GribIndexException("Current GRIB longitude out of range, index: %s, min: %s, max: %s" % (
-                str(long), str(self.c_longmin), str(self.c_longmax)))
+        set = 0.0
+        dft = 0.0
+        if self.current:
+            u10c = 2 * self.c_ds['UOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
+                                                             longitude=tpt.get_long()).values
+            v10c = 2 * self.c_ds['VOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
+                                                             longitude=tpt.get_long()).values
+            if not np.isnan(u10c) and not np.isnan(v10c):
+                set = atan2(u10c, v10c) % (pi * 2)
+                dft = sqrt(u10c ** 2 + v10c ** 2) * 3600 / 1852
 
-        _timeindex = np.rint((time - self.c_timemin) / self.c_timestep).astype(int)
-        _latindex = np.rint((lat - self.c_latmin) / self.c_latstep).astype(int)
-        _longindex = np.rint((long - self.c_longmin) / self.c_longstep).astype(int)
-        print(f"timeindex: {_timeindex}, latindex: {_latindex}, longindex: {_longindex}")
-        try:
-            u10 = self.c_ds.UOGRD_2mbelowsealevel.values[_timeindex, _latindex, _longindex]
-            v10 = self.c_ds.VOGRD_2mbelowsealevel.values[_timeindex, _latindex, _longindex]
-        except IndexError:
-            print("Current GRIB IndexException")
-            raise GribIndexException(f"Current GRIB Index Exception\ntime: {self.c_timemin} - {time} - {self.c_timemax}\n"
-                                     f"lat: {self.c_latmin} - {lat} - {self.c_latmax}, long: time: {self.c_longmin} - {long} - {self.c_longmax}\n")
+        return {'set': set, 'dft': dft}
+    # get_current()
 
-        if np.isnan(u10) or np.isnan(v10):
-            print(f"Current retrieval error, u10: {u10}, v10: {v10}")
-            u10 = 0.0
-            v10 = 0.0
-        _dft = sqrt(u10**2 + v10**2) * 3600/1852
-        _set = degrees(atan2(u10, v10)) % 360
-        if np.isnan(_dft) or np.isnan(_set):
-            print(f"Current retrieval error, _dft: {_dft}, _set: {_set}")
+    def get_wind(self, tpt: TrackPoint) -> Dict[str, float]:
+        """ return twd and tws for a trackpoint location and time
 
-        return {'dft': _dft, 'set': _set, 'hor': u10, 'ver': v10}
-    # _get_current()
-
-    def get_tws(self, tpt):
-        """ public method to get true wind speed
-
-        :param tpt: trackpoint with latitude, longitude and time
-        :return: float - true wind speed in knots
+        :param tpt:  position in lat and long, time in UTC
+        :return: twd in radians, tws in knots
         """
-        if not self.current:
-            # print(f"get_tws: {self._get_ground_wind(tpt)['tws']}")
-            return self._get_ground_wind(tpt)['tws']
-        else:
-            res_vector = sum_vectors(self._get_ground_wind(tpt)['twd'], self._get_ground_wind(tpt)['tws'], \
-                                     opposite_direction(self._get_current(tpt)['set']), self._get_current(tpt)['dft'])
-            return res_vector['len']
-    # get_tws()
+        u10w = self.w_ds['UGRD_10maboveground'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
+                                                       longitude=tpt.get_long()).values
+        v10w = self.w_ds['VGRD_10maboveground'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
+                                                       longitude=tpt.get_long()).values
+        gwd = atan2(u10w, v10w) + pi
+        gws = sqrt(u10w ** 2 + v10w ** 2) * 3600 / 1852
 
-    def get_twd(self, tpt):
-        """ public method to get true wind direction
+        set = 0.0
+        dft = 0.0
+        if self.current:
+            # print(f"read the current at {tpt.get_time()}, {tpt.get_lat()}, {tpt.get_long()}")
+            u10c = 2 * self.c_ds['UOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
+                                                             longitude=tpt.get_long()).values
+            v10c = 2 *self.c_ds['VOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
+                                                             longitude=tpt.get_long()).values
+            # print(f"u10c: {u10c}, v10c: {v10c}")
+            if not np.isnan(u10c) and not np.isnan(v10c):
+                # print("we've got something")
+                u10w -= u10c
+                v10w -= v10c
+                set = atan2(u10c, v10c) % (2 * pi)
+                dft = sqrt(u10c ** 2 + v10c ** 2) * 3600 / 1852
+            else:
+                # print("NaN")
+                set = 0.0
+                dft = 0.0
 
-        :param tpt: trackpoint with latitude, longitude and time
-        :return: int - true wind direction in degrees
-        """
-        if not self.current:
-            return self._get_ground_wind(tpt)['twd']
-        else:
-            _gwd = self._get_ground_wind(tpt)['twd']
-            _gws = self._get_ground_wind(tpt)['tws']
-            _set = self._get_current(tpt)['set']
-            _dft = self._get_current(tpt)['dft']
-            res_vector = sum_vectors(_gwd, _gws, opposite_direction(_set), _dft)
-            print(f"_gwd: {_gwd}, _gws: {_gws}, _set: {_set}, _dft: {_dft}, twd: {res_vector['dir']}")
-            return res_vector['dir']
-    # get_twd()
+        twd = atan2(u10w, v10w) + pi
+        tws = sqrt(u10w ** 2 + v10w ** 2) * 3600 / 1852
 
-    def current(self):
+        return {'twd': twd, 'tws': tws, 'gwd': gwd, 'gws': gws, 'set': set, 'dft': dft}
+    # get_wind()
+
+    def get_current(self) -> bool:
         return self.current
 
-    def get_set(self, tpt):
-        return self._get_current(tpt)['set']
+    def meteogram(self, location: WayPoint, start: datetime, step: timedelta, iterations: int) -> None:
+        tm: datetime = start
+        print("sp date/time (UTC)      gwd  gws    twd  tws    set   dft")
+        for i in range(iterations):
+            tp = TrackPoint(location.get_lat(), location.get_long(), tm)
+            wind = self.get_wind(tpt=tp)
+            print(f"{i+1:2d} {tm}  {degrees(wind['gwd']):003.0f}  {wind['gws']:5.2f}  {degrees(wind['twd']):003.0f}  {wind['tws']:5.2f}  {degrees(wind['set']):003.0f}  {wind['dft']:5.2f}")
+            tm += step
+    # meteogram()
 
-    def get_dft(self, tpt):
-        return self._get_current(tpt)['dft']
+    @classmethod
+    def TWA(cls, twd: float, hea: float) -> float:
+        """ Calculate True Wind Angle - Angle between wind direction and heading of the boat
+
+        :param twd: radians
+        :param hea: radinas
+        :return: degrees
+        """
+        res = ((twd - hea) + pi) % (2 * pi) - pi
+        if res == -pi:
+            res = pi
+        return degrees(res)
+    # TWA()
+
+    @classmethod
+    def dt64_to_dt(cls, dt64: np.datetime64) -> datetime:
+        """ transform numpy.datetime64 to datetime
+
+        :param dt64:
+        :return:
+        """
+        ts = (dt64 - np.datetime64('1970-01-01T00:00:00Z')) / np.timedelta64(1, 's')
+        return datetime.utcfromtimestamp(ts)
 
 # end of WindObject
 
@@ -585,140 +489,94 @@ class PolarObject(object):
                 f2 = 1 - (twa_vector[i + 1] - twa) / d
                 return bsp_vector[i] * f1 + bsp_vector[i + 1] * f2
         raise PolarException("no wind value calculated")
-
 # end PolarObject
 
 class Itinerary(object):
 
     #    def __init__(self, route, start_time):       # constructor with route and start time
-    def __init__(self, id, route, start_time):
+    def __init__(self, id: str, route: Route, start_time: datetime) -> None:
         self.id = id
         _org = route.wpt(0)
         self.dest = route.wpt(1)
-        self.tpt_list = []  # track point list (track point = way point + time)
+        self.leg_distance = route.wpt(0).dtw(route.wpt(1))
+        self.tpt_list: List[TrackPoint] = []  # track point list (track point = way point + time)
         tpt = TrackPoint(_org.get_lat(), _org.get_long(), start_time)
         self.tpt_list.append(tpt)
-        self.courselist = []
+        self.courselist: List[float] = []
 
-    def get_id(self):
-        """ get id of itinerary
+    def get_id(self) -> str:
+        return self.id
 
-        :return: int - itinerary id
-        """
-        return(self.id)
-
-    def last_tpt(self):
+    def last_tpt(self) -> TrackPoint:
         return self.tpt_list[-1]
 
-    def tpt_count(self):
+    def tpt_count(self) -> int:
         return len(self.tpt_list)
 
-    def get_tpt(self, i):
+    def get_tpt(self, i) -> TrackPoint:
         return self.tpt_list[i]
 
-    def add_tpt(self, lat, long, time):
+    def add_tpt(self, lat: float, long: float, time: datetime):
         tpt = TrackPoint(lat, long, time)
         self.tpt_list.append(tpt)
 
-    def get_dest(self):
-        """get destination as Waypoint object
-
-        :return: Waypoint object - destination
-        """
+    def get_dest(self) -> WayPoint:
         return self.dest
 
-    def dist_to_go(self):
+    def dist_to_go(self) -> float:
         lat1 = self.last_tpt().get_lat()
         long1 = self.last_tpt().get_long()
         lat2 = self.dest.get_lat()
         long2 = self.dest.get_long()
         return DTW(lat1, long1, lat2, long2)
 
-    def elap_time(self):
+    def elap_time(self) -> float:
         """return elapsed time of itinerary
 
         :return: float - elapsed time of itinerary in milli seconds
         """
         start  = self.tpt_list[0].get_time()
         finish = self.tpt_list[-1].get_time()
-        milliseconds = (finish - start) / np.timedelta64(1, 'ms')
-        return milliseconds
+        seconds = (finish - start) / timedelta(seconds=1)
+        return seconds
 
-    def distance(self):
-        """return effective distance of itinerary
-
-        :return: float - effective distance of itinerary in nm
-        """
+    def distance(self) -> float:                    # return effective distance of itinerary in nm
         start = self.tpt_list[0].get_wpt()
         finish = self.tpt_list[-1].get_wpt()
         return start.dtw(finish)
 
-    def avg_bsp(self):
-        """return average boat speed over itinerary
-        :return: float - average boat speed in kn
-        """
-        return self.distance() / (self.elap_time() / (1000 * 3600))
+    def avg_bsp(self) -> float:                     # return average boat speed over itinerary in kn
+        return (self.leg_distance - self.dist_to_go()) / (self.elap_time() / 3600)
 
-
-    def get_courselist(self):
-        """ get courselist - list of subsequent courses between rack points
-
-        :return: list of int - list of courses submitted in add_step()
-        """
+    def get_courselist(self) -> List[float]:        # get courselist - list of subsequent courses in radians
         return self.courselist
 
     def add_step(self, wo, po, step, crs):
+        if crs < 0 or crs >= (2 * pi):
+            raise ValueError
         self.courselist.append(crs)
         _cur_loc = self.last_tpt().get_wpt()
         _cur_time = self.last_tpt().get_time()
-        _twd = wo.get_twd(self.last_tpt())
-        _tws = wo.get_tws(self.last_tpt())
-        if wo.current:
-            _set = wo.get_set(self.last_tpt())
-            _dft = wo.get_dft(self.last_tpt())
-        else:
-            _set = 0
-            _dft = 0.0
+        wind: Dict[str, float] = wo.get_wind(tpt=self.last_tpt())
+        _twd = wind['twd']
+        _tws = wind['tws']
+        _set = wind['set']
+        _dft = wind['dft']
         # print(f"set: {_set} gr, dft: {_dft} nm")
         # print(f"add_step, crs: {crs}, _twd: {_twd}, TWA: {TWA(twd=_twd, hea=crs)} ")
-        _bsp = po.get_bsp(tws=_tws, twa=TWA(twd=_twd, hea=crs))
+        _bsp = po.get_bsp(tws=_tws, twa=WindObject.TWA(twd=_twd, hea=crs))
         _dtw = self.dist_to_go()
 
         if _bsp * step > _dtw:
             duration = _dtw / _bsp
-            vector = sum_vectors(crs, _bsp * duration, _set, _dft * duration)
-            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=vector['dir'], dist=vector['len'])
-            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(duration * 3600 * 1000), 'ms'))
         else:
-            vector = sum_vectors(crs, _bsp * step, _set, _dft * step)
-            new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=vector['dir'], dist=vector['len'])
-            self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + np.timedelta64(int(step * 3600 * 1000), 'ms'))
+            duration = step
+
+        vector = sum_vectors(crs, _bsp * duration, _set, _dft * duration)
+        new_loc = new_crd(lat=_cur_loc.get_lat(), long=_cur_loc.get_long(), hea=vector['dir'], dist=vector['len'])
+        self.add_tpt(new_loc['lat'], new_loc['long'], _cur_time + timedelta(hours=duration))
 
 # end Itinerary
-
-def TWA(twd, hea):
-    """calculates true wind angle for a given wind direction and heading
-
-    :param twd: int - true wind direction in degrees
-    :param hea: int - boat heading in degrees
-    :return: int - true wind angle between heading and twd, negative is port, positive is starboard
-    """
-    # print(f"TWA(twd={twd}, hea={hea})")
-    r = round(twd - hea)
-    # print(f"-TWA-, twd: {twd}, hea: {hea}, r: {r}")
-    if r >= -179 and r <= 180:
-        # print("TWA(1. twd=%d, hea=%d, res=%d)" % (twd, hea, r))
-        return r
-    if r == -180:
-        # print("TWA(2. twd=%d, hea=%d, res=180)" % (twd, hea))
-        return 180
-    if r > 180:
-        # print("TWA(3. twd=%d, hea=%d, res=%d)" % (twd, hea, r - 360))
-        return r - 360
-    if r < -180:
-        # print("TWA(4. twd=%d, hea=%d, res=%d)" % (twd, hea, 360 + r))
-        return 360 + r
-# TWA()
 
 def DTW(lat1, long1, lat2, long2):
     # Haversine
@@ -750,29 +608,25 @@ def new_crd(lat, long, hea, dist):
     """
     R = 6371 / 1.852
     _lat, _long = map(radians, [lat, long])
-    _hea = radians(hea)
+    _hea = hea
     _lat2 = asin(sin(_lat) * cos(dist / R) + cos(_lat) * sin(dist / R) * cos(_hea))
     _long2 = _long + atan2(sin(_hea) * sin(dist / R) * cos(_lat), cos(dist / R) - sin(_lat) * sin(_lat2))
     return {'lat': degrees(_lat2), 'long': degrees(_long2)}
 
-def opposite_direction(dir):
-    """ return opposite direction of a course
-
-    :param dir: int direction in degrees
-    :return: int - opposite direction in degrees
-    """
-    return (dir + 180) % 360
-# opposite_direction()
+# def opposite_direction(dir):                # return opposite direction of a course
+#     return (dir + 180) % 360
+# # opposite_direction()
 
 def sum_vectors(v1_dir, v1_len, v2_dir, v2_len):
     """add two vectors with direction and length
     """
-    vertical   = cos(radians(v1_dir)) * v1_len + cos(radians(v2_dir)) * v2_len
+    y = cos(v1_dir) * v1_len + cos(v2_dir) * v2_len
     # print(f"vertical: {vertical}")
-    horizontal = sin(radians(v1_dir)) * v1_len + sin(radians(v2_dir)) * v2_len
+    x = sin(v1_dir) * v1_len + sin(v2_dir) * v2_len
     # print(f"horizonal: {horizontal}")
-    dir = degrees(atan2(horizontal, vertical)) % 360
-    len = sqrt(pow(vertical, 2) + pow(horizontal, 2))
+    dir = atan2(x, y) % (2 * pi)
+    len = sqrt(pow(x, 2) + pow(y, 2))
+    # print(f"sum_vectors(v1_dir={degrees(v1_dir):003.0f}, v1_len={v1_len:5.2f}, v2_dir={degrees(v2_dir):003.0f}, v2_len={v2_len:5.2f} -> x: {x:5.2f}, y: {y:5.2f} dir: {degrees(dir):003.0f}, len: {len:5.2f}")
     return {'dir': dir, 'len': len}
 
 def version():
@@ -780,7 +634,7 @@ def version():
 
     :return: string - version string
     """
-    return("Routing library version Oosterschelde 0.1.0 (beta)")
+    return("Routing library version Westerschelde 0.1.1 (beta)")
 
 
 # marks = {"EA1"    :["52° 34,777'", "5° 13,433'"], \

@@ -1,0 +1,11 @@
+		  <sym>Flag, Blue</sym>
+		  <extensions>
+			<trp:ViaPoint>
+			  <trp:CalculationMode>ShorterDistance</trp:CalculationMode>
+			  <trp:ElevationMode>Standard</trp:ElevationMode>
+			</trp:ViaPoint>
+			<gpxx:RoutePointExtension>
+			  <gpxx:Subclass>000000000000FFFFFFFFFFFFFFFFFFFFFFFF</gpxx:Subclass>
+			</gpxx:RoutePointExtension>
+		  </extensions>
+		</rtept>
