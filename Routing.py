@@ -10,7 +10,7 @@
 # Ruud Kapteijn, 9-feb-2020
 ###############################################################################################
 
-from __future__ import annotations                  # allows forward references to class definitions (e.g. WayPoint)
+# from __future__ import annotations                  # allows forward references to class definitions (e.g. WayPoint)
 import numpy as np  # type: ignore
 import xarray as xr
 from math import sin, asin, cos, sqrt, atan2, radians, degrees, pi
@@ -81,16 +81,17 @@ class WayPoint(object):
         # print("c1: -%s-" % (c1))
         return float(c0) + float(c1) / 60
 
-    def dtw(self, wpt: WayPoint) -> float:
+    def dtw(self, wpt) -> float:
         """distance to waypoint calculates distance from self waypoint to wpt
-
+        # def dtw(self, wpt: WayPoint) -> float:
         :param wpt: waypoint to calculate distance to
         :return: float - distance in nautical miles
         """
         return DTW(self.lat, self.long, wpt.get_lat(), wpt.get_long())
 
-    def btw(self, wpt: WayPoint) -> float:
+    def btw(self, wpt) -> float:
         """bearing to waypoint calculates bearing from self waypoint to wpt
+        # def btw(self, wpt: WayPoint) -> float:
 
         :param wpt: waypoint to calculate bearing to
         :return: int - bearing in degrees
@@ -213,10 +214,12 @@ class WindObject(object):
             print("No current data available")
     #__init__()
 
-    def _get_wind_dataset(self) -> xr.xarray:
+    def _get_wind_dataset(self):
+        # def _get_wind_dataset(self) -> xr.xarray:
         return self.w_ds
 
-    def _get_current_dataset(self) -> xr.xarray:
+    def _get_current_dataset(self):
+        # def _get_current_dataset(self) -> xr.xarray:
         return self.c_ds
 
     def get_current(self, tpt: TrackPoint) -> Dict[str, float]:

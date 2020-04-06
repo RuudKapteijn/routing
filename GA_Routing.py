@@ -6,12 +6,12 @@
 import Routing as rt
 from sys import version
 from datetime import datetime
-from time import perf_counter, perf_counter_ns
-from random import random, uniform, randint
+from time import perf_counter
+from random import random, uniform, randint, seed
 import math
 from math import degrees, floor, radians
-from numpy import array
-import matplotlib.pyplot as plt
+# from numpy import array
+# import matplotlib.pyplot as plt
 from typing import List, Dict
 import configparser as cp
 import sys
@@ -258,6 +258,10 @@ print(f"Uses {rt.version()}")
 # Initialization
 params = get_parameters()
 STEPTIME = params['default'].getfloat('step_size')
+par_seed = params['default'].getint('random_seed')
+if par_seed and par_seed > 0:
+    seed(par_seed)                   # set random seed to reproduce results
+    print(f"Random seed set to {par_seed}")
 # open netcdf version of a wind GRIB file and current GRIB file in object mywo
 mywo = rt.WindObject(windfile=params['default']['wind_grib_file'], currentfile=params['default']['current_grib_file'])
 mypo = rt.PolarObject(filename=params['default']['polar_file'])     # open Expedition polar file in object mypo
@@ -265,7 +269,7 @@ rte = rt.Route(name='-', gpxfile=params['default']['route_file'])   # open route
 fld = rte.wpt(0).btw(rte.wpt(1))
 start_time: datetime = datetime.strptime(params['default']['start_time'], "%Y-%m-%d %H:%M")
 generations = params['default'].getint('generations')
-print(f"{rte.stats()} at {str(start_time)}")
+print(f"{rte.stats()} at start time: {str(start_time)}, generations: {generations}")
 
 # generate initial population - set of itineraries
 pf_step1 = perf_counter()
