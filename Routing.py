@@ -17,6 +17,7 @@ from math import sin, asin, cos, sqrt, atan2, radians, degrees, pi
 import xml.etree.ElementTree as et
 from datetime import datetime, timedelta
 from typing import Union, List, Dict
+from scipy.interpolate import RegularGridInterpolator
 
 class GribIndexException(Exception):
     """ Exception subclass to throw for index out of range of GRIB file (lat, long or time)
@@ -205,9 +206,33 @@ class WindObject(object):
         """
         print("Load wind data from %s" % windfile)
         self.w_ds = xr.open_dataset(windfile, engine='netcdf4')
+        self.wind_u10_interpolator = RegularGridInterpolator((self.w_ds['time'].values.astype(float),
+                                                              self.w_ds['latitude'].values,
+                                                              self.w_ds['longitude'].values),
+                                                              self.w_ds['UGRD_10maboveground'].values,
+                                                              bounds_error = False,
+                                                              fill_value=0.0)
+        self.wind_v10_interpolator = RegularGridInterpolator((self.w_ds['time'].values.astype(float),
+                                                              self.w_ds['latitude'].values,
+                                                              self.w_ds['longitude'].values),
+                                                              self.w_ds['VGRD_10maboveground'].values,
+                                                              bounds_error = False,
+                                                              fill_value=0.0)
         if currentfile:
             print("Load currents from: %s" % currentfile)
             self.c_ds = xr.open_dataset(currentfile, engine='netcdf4')
+            self.current_u10_interpolator = RegularGridInterpolator((self.c_ds['time'].values.astype(float),
+                                                                     self.c_ds['latitude'].values,
+                                                                     self.c_ds['longitude'].values),
+                                                                     self.c_ds['UOGRD_2mbelowsealevel'].values,
+                                                                     bounds_error = False,
+                                                                     fill_value=0.0)
+            self.current_v10_interpolator = RegularGridInterpolator((self.c_ds['time'].values.astype(float),
+                                                                     self.c_ds['latitude'].values,
+                                                                     self.c_ds['longitude'].values),
+                                                                     self.c_ds['VOGRD_2mbelowsealevel'].values,
+                                                                     bounds_error = False,
+                                                                     fill_value=0.0)
             self.current: bool = True
         else:
             self.current = False
@@ -231,10 +256,10 @@ class WindObject(object):
         set = 0.0
         dft = 0.0
         if self.current:
-            u10c = 2 * self.c_ds['UOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
-                                                             longitude=tpt.get_long()).values
-            v10c = 2 * self.c_ds['VOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
-                                                             longitude=tpt.get_long()).values
+            dt64 = np.datetime64(tpt.get_time(), 'ns')
+            int_pnt = np.array([[dt64.astype(float), tpt.get_lat(), tpt.get_long()], ])
+            u10c = 2 * self.current_u10_interpolator(int_pnt)[0]
+            v10c = 2 * self.current_v10_interpolator(int_pnt)[0]
             if not np.isnan(u10c) and not np.isnan(v10c):
                 set = atan2(u10c, v10c) % (pi * 2)
                 dft = sqrt(u10c ** 2 + v10c ** 2) * 3600 / 1852
@@ -248,30 +273,26 @@ class WindObject(object):
         :param tpt:  position in lat and long, time in UTC
         :return: twd in radians, tws in knots
         """
-        u10w = self.w_ds['UGRD_10maboveground'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
-                                                       longitude=tpt.get_long()).values
-        v10w = self.w_ds['VGRD_10maboveground'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
-                                                       longitude=tpt.get_long()).values
+        dt64 = np.datetime64(tpt.get_time(), 'ns')
+        int_pnt = np.array([[dt64.astype(float), tpt.get_lat(), tpt.get_long()],])
+        u10w = self.wind_u10_interpolator(int_pnt)[0]
+        v10w = self.wind_v10_interpolator(int_pnt)[0]
         gwd = atan2(u10w, v10w) + pi
         gws = sqrt(u10w ** 2 + v10w ** 2) * 3600 / 1852
 
         set = 0.0
         dft = 0.0
         if self.current:
-            # print(f"read the current at {tpt.get_time()}, {tpt.get_lat()}, {tpt.get_long()}")
-            u10c = 2 * self.c_ds['UOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
-                                                             longitude=tpt.get_long()).values
-            v10c = 2 *self.c_ds['VOGRD_2mbelowsealevel'].interp(time=tpt.get_time(), latitude=tpt.get_lat(),
-                                                             longitude=tpt.get_long()).values
-            # print(f"u10c: {u10c}, v10c: {v10c}")
+            dt64 = np.datetime64(tpt.get_time(), 'ns')
+            int_pnt = np.array([[dt64.astype(float), tpt.get_lat(), tpt.get_long()], ])
+            u10c = 2 * self.current_u10_interpolator(int_pnt)[0]
+            v10c = 2 * self.current_v10_interpolator(int_pnt)[0]
             if not np.isnan(u10c) and not np.isnan(v10c):
-                # print("we've got something")
                 u10w -= u10c
                 v10w -= v10c
                 set = atan2(u10c, v10c) % (2 * pi)
                 dft = sqrt(u10c ** 2 + v10c ** 2) * 3600 / 1852
             else:
-                # print("NaN")
                 set = 0.0
                 dft = 0.0
 
@@ -555,8 +576,9 @@ class Itinerary(object):
         return self.courselist
 
     def add_step(self, wo, po, step, crs):
-        if crs < 0 or crs >= (2 * pi):
-            raise ValueError
+        # if crs < 0 or crs >= (2 * pi):
+        #     print(f"ERROR in Itinerary.add_step() crs out of range: {crs} (should be between 0 and {2 * pi})")
+        #     raise ValueError
         self.courselist.append(crs)
         _cur_loc = self.last_tpt().get_wpt()
         _cur_time = self.last_tpt().get_time()

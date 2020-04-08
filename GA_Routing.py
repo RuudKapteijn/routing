@@ -7,9 +7,9 @@ import Routing as rt
 from sys import version
 from datetime import datetime
 from time import perf_counter
-from random import random, uniform, randint, seed
+from random import random, uniform, randint, seed, shuffle
 import math
-from math import degrees, floor, radians
+from math import degrees, floor, radians, pi
 # from numpy import array
 # import matplotlib.pyplot as plt
 from typing import List, Dict
@@ -116,28 +116,66 @@ def crossover_genes(genes1: List[float], genes2: List[float]) -> List[float]:
 # crossover_genes()
 
 def mutate_genes(genes: List[float], mutations: int, mutation_factor: float) -> List[float]:
-    mutation_list = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
-    for i in range(0, mutations):         # number of mutations
-        mutation = mutation_list[randint(0, len(mutation_list) - 1)] * 2 * math.pi / 360 * mutation_factor
-        index = randint(0, len(genes) - 1)
-        # print(f"mutate_genes, index: {index}, len(genes): {len(genes)}, genes: {str(genes)}, mutation: {mutation}")
-        genes[index] = (genes[index] + mutation) % (2 * math.pi)
-    return genes
+    scenario = randint(0, 3)
+
+    if scenario == 0:
+        mutation_list = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
+        for i in range(0, mutations):         # number of mutations
+            mutation = mutation_list[randint(0, len(mutation_list) - 1)] * mutation_factor
+            index = randint(0, len(genes) - 1)
+            # print(f"mutate_genes, index: {index}, len(genes): {len(genes)}, genes: {str(genes)}, mutation: {mutation}")
+            genes[index] = (genes[index] + radians(mutation)) % (2 * pi)
+            # if genes[index] < 0 or genes[index] >= (2 * pi):
+            #     print(f"ERROR is mutate_genes, genes[{index}]={genes[index]}")
+        return genes
+
+    if scenario == 1:
+        mutation_list = [-100, -95, -90, -85, -80, 80, 85, 90, 95, 100]
+        for i in range(0, mutations):  # number of mutations
+            mutation = mutation_list[randint(0, len(mutation_list) - 1)] * mutation_factor
+            index = randint(0, len(genes) - 1)
+            # print(f"mutate_genes, index: {index}, len(genes): {len(genes)}, genes: {str(genes)}, mutation: {mutation}")
+            genes[index] = (genes[index] + radians(mutation)) % (2 * pi)
+            # if genes[index] < 0 or genes[index] >= (2 * pi):
+            #     print(f"ERROR is mutate_genes, genes[{index}]={genes[index]}")
+        return genes
+
+    if scenario == 2:
+        mutation_list = [-100, -90, -80, -70, -60, 60, 70, 80, 90, 100]
+        for i in range(0, mutations):  # number of mutations
+            mutation = mutation_list[randint(0, len(mutation_list) - 1)] * mutation_factor
+            index = randint(0, len(genes) - 1)
+            # print(f"mutate_genes, index: {index}, len(genes): {len(genes)}, genes: {str(genes)}, mutation: {mutation}")
+            genes[index] = (genes[index] + radians(mutation)) % (2 * pi)
+            # if genes[index] < 0 or genes[index] >= (2 * pi):
+            #     print(f"ERROR is mutate_genes, genes[{index}]={genes[index]}")
+        return genes
+
+    if scenario == 3:
+        # print("shuffle")
+        shuffle(genes)
+        return genes
+
+    print("ERROR in Mutate() - unknown option")
+
 # mutate_genes()
 
 def generate_individual_with_genes(id, wind, polar, step, route, start_time, genes) -> rt.Itinerary:
     ind = rt.Itinerary(id=id, route=route, start_time=start_time)  # create first itinerary/individual
     i = 0
     while i < len(genes) and ind.dist_to_go() > 0.1:  # add track points to individual with random direction
-        try:
-            stats['add_step'] += 1
-            ind.add_step(wind, polar, step, genes[i])
-        except rt.GribIndexException as gie:
-            if stats['grib_index_exceptions'] == 0:
-                print(f"{gie.message} may indicate too big step or too many steps")
-            stats['grib_index_exceptions'] += 1
-        finally:
-            i += 1
+        # try:
+        #     stats['add_step'] += 1
+        #     ind.add_step(wind, polar, step, genes[i])
+        # except rt.GribIndexException as gie:
+        #     if stats['grib_index_exceptions'] == 0:
+        #         print(f"{gie.message} may indicate too big step or too many steps")
+        #     stats['grib_index_exceptions'] += 1
+        # finally:
+        #     i += 1
+        stats['add_step'] += 1
+        ind.add_step(wind, polar, step, genes[i])
+        i += 1
     return ind
 
 
@@ -213,13 +251,13 @@ def print_winning_track(ind: rt.Itinerary) -> None:
         dtg: float = tpt.get_wpt().dtw(dest)
         lat: str = coord_string(tpt.get_lat())
         long: str = coord_string(tpt.get_long())
-        print(f"{i:2d} {ts}  {degrees(twd):3.0f}  {tws:2.2f}  {degrees(hea):3.0f}  {twa:4.0f}  {bsp:2.2f}  {dtg:5.3f}  {lat}  {long}")
+        print(f"{i:2d} {ts}  {degrees(twd):3.0f}  {tws:2.2f}  {degrees(hea):3.0f}  {twa:4.0f}  {bsp:2.2f}  {dtg:6.3f}  {lat}  {long}")
     tpt = ind.last_tpt()
     ts = str(tpt.get_time())[0:19]
     dtg: float = tpt.get_wpt().dtw(dest)
     lat: str = coord_string(tpt.get_lat())
     long: str = coord_string(tpt.get_long())
-    print(f"-1 {ts}                               {dtg:5.3f}  {lat}  {long}\n")
+    print(f"-1 {ts}                                {dtg:5.3f}  {lat}  {long}\n")
 
 def write_result_file(ind: rt.Itinerary) -> None:
     f_out = open('result.gpx', 'w')
@@ -295,7 +333,7 @@ while True:
     for course in best.get_courselist():
         cl.append(round(math.degrees(course)))
     pf_step2 = perf_counter()
-    print("Generation %2d (%5.0f s), population: %4d - best: %s dist: %6.3f nm, time: %d hr %6.3f min, avg bsp: %5.2f, fitness: %d, courses: %s" %
+    print("Generation %3d (%5.1f s), population: %4d - best: %2s dist: %6.3f nm, time: %d hr %6.3f min, avg bsp: %5.2f, fitness: %5d, courses: %s" %
          (i, (pf_step2 - pf_step1), len(sorted_population), best.get_id(), best.dist_to_go(), hrs, mins, best.avg_bsp(), ind_fitness(best), str(cl)))
 
     # bsp_list: List[float] = []
